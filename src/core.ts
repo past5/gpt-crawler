@@ -62,7 +62,7 @@ export async function crawl(config: Config) {
           // Handle the cookie based on whether it's an array or a single object
           if (Array.isArray(config.cookie)) {
             // If it's an array, add all cookies
-            const cookies = config.cookie.map(cookie => ({
+            const cookies = config.cookie.map((cookie) => ({
               name: cookie.name,
               value: cookie.value,
               url: request.loadedUrl,
@@ -296,7 +296,7 @@ export async function write(config: Config) {
       await writeBatchToFile();
     }
   }
-  
+
   // Return the output filename for the crawler class
   return config.outputFileName;
 }
