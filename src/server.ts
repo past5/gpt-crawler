@@ -25,8 +25,7 @@ app.post("/crawl", async (req, res) => {
   try {
     const validatedConfig = configSchema.parse(config);
     const crawler = new GPTCrawlerCore(validatedConfig);
-    await crawler.crawl();
-    const result = await crawler.write();
+    const result = await crawler.crawl();
     // Handle the case where write() returns an array of PathLike
     const outputFileName = Array.isArray(result) ? result[0] : result;
     const outputFileContent = await readFile(outputFileName, "utf-8");
