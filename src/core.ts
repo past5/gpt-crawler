@@ -7,9 +7,7 @@ import { Page } from "playwright";
 import { isWithinTokenLimit } from "gpt-tokenizer";
 import { PathLike } from "fs";
 
-let pageCounter = 0;
-let crawler: PlaywrightCrawler;
-
+// Remove global variables to prevent shared state between crawls
 export function getPageHtml(page: Page, selector = "body") {
   return page.evaluate((selector) => {
     // Check if the selector is an XPath
@@ -48,104 +46,117 @@ export async function waitForXPath(page: Page, xpath: string, timeout: number) {
   );
 }
 
-// Modify the crawl function to handle array of URLs
-export async function crawl(config: Config) {
+// Update the crawl function to handle arrays
+export async function crawl(config: Config | Config[]) {
+  if (Array.isArray(config)) {
+    // Process each config in the array
+    for (const singleConfig of config) {
+      await crawlSingle(singleConfig);
+    }
+  } else {
+    // Process a single config
+    await crawlSingle(config);
+  }
+}
+
+// Extract the single config crawling functionality
+async function crawlSingle(config: Config) {
   configSchema.parse(config);
 
   if (process.env.NO_CRAWL !== "true") {
-    // Create the crawler with the same configuration
-    const crawler = new PlaywrightCrawler({
-      // Use the requestHandler to process each of the crawled pages.
-      async requestHandler({ request, page, enqueueLinks, log, pushData }) {
-        // Same requestHandler code...
-        if (config.cookie) {
-          // Handle the cookie based on whether it's an array or a single object
-          if (Array.isArray(config.cookie)) {
-            // If it's an array, add all cookies
-            const cookies = config.cookie.map((cookie) => ({
-              name: cookie.name,
-              value: cookie.value,
-              url: request.loadedUrl,
-            }));
-            await page.context().addCookies(cookies);
-          } else {
-            // If it's a single object
-            const cookie = {
-              name: config.cookie.name,
-              value: config.cookie.value,
-              url: request.loadedUrl,
-            };
-            await page.context().addCookies([cookie]);
-          }
-        }
-
-        const title = await page.title();
-        pageCounter++;
-        log.info(
-          `Crawling: Page ${pageCounter} / ${config.maxPagesToCrawl} - URL: ${request.loadedUrl}...`,
-        );
-
-        // Use custom handling for XPath selector
-        if (config.selector) {
-          if (config.selector.startsWith("/")) {
-            await waitForXPath(
-              page,
-              config.selector,
-              config.waitForSelectorTimeout ?? 1000,
-            );
-          } else {
-            await page.waitForSelector(config.selector, {
-              timeout: config.waitForSelectorTimeout ?? 1000,
-            });
-          }
-        }
-
-        const html = await getPageHtml(page, config.selector);
-
-        // Save results as JSON to ./storage/datasets/default
-        // Include the source URL in the data to help with file naming later
-        await pushData({
-          title,
-          url: request.loadedUrl,
-          html,
-          sourceUrl: request.loadedUrl,
-        });
-
-        if (config.onVisitPage) {
-          await config.onVisitPage({ page, pushData });
-        }
-
-        // Extract links from the current page
-        // and add them to the crawling queue.
-        await enqueueLinks({
-          globs:
-            typeof config.match === "string" ? [config.match] : config.match,
-        });
-      },
-      maxRequestsPerCrawl: config.maxPagesToCrawl,
-      // Other options remain the same...
-      preNavigationHooks: [
-        // Same preNavigationHooks code...
-        async ({ page, log }) => {
-          const RESOURCE_EXCLUSTIONS = config.resourceExclusions ?? [];
-          if (RESOURCE_EXCLUSTIONS.length === 0) {
-            return;
-          }
-          await page.route(`**\/*.{${RESOURCE_EXCLUSTIONS.join()}}`, (route) =>
-            route.abort("aborted"),
-          );
-          log.info(
-            `Aborting requests for as this is a resource excluded route`,
-          );
-        },
-      ],
-    });
-
     // Handle URLs based on whether config.url is a string or array
     if (Array.isArray(config.url)) {
       // For each URL in the array
       for (const url of config.url) {
-        pageCounter = 0; // Reset page counter for each URL
+        // Create a separate counter for this crawl
+        let localPageCounter = 0;
+        
+        // Create a new crawler instance for each URL to avoid sharing request queues
+        const crawler = new PlaywrightCrawler({
+          // Use the requestHandler to process each of the crawled pages.
+          async requestHandler({ request, page, enqueueLinks, log, pushData }) {
+            if (config.cookie) {
+              // Handle the cookie based on whether it's an array or a single object
+              if (Array.isArray(config.cookie)) {
+                // If it's an array, add all cookies
+                const cookies = config.cookie.map((cookie) => ({
+                  name: cookie.name,
+                  value: cookie.value,
+                  url: request.loadedUrl,
+                }));
+                await page.context().addCookies(cookies);
+              } else {
+                // If it's a single object
+                const cookie = {
+                  name: config.cookie.name,
+                  value: config.cookie.value,
+                  url: request.loadedUrl,
+                };
+                await page.context().addCookies([cookie]);
+              }
+            }
+
+            const title = await page.title();
+            localPageCounter++;
+            log.info(
+              `Crawling: Page ${localPageCounter} / ${config.maxPagesToCrawl} - URL: ${request.loadedUrl}...`,
+            );
+
+            // Use custom handling for XPath selector
+            if (config.selector) {
+              if (config.selector.startsWith("/")) {
+                await waitForXPath(
+                  page,
+                  config.selector,
+                  config.waitForSelectorTimeout ?? 1000,
+                );
+              } else {
+                await page.waitForSelector(config.selector, {
+                  timeout: config.waitForSelectorTimeout ?? 1000,
+                });
+              }
+            }
+
+            const html = await getPageHtml(page, config.selector);
+
+            // Save results as JSON to ./storage/datasets/default
+            // Include the source URL in the data to help with file naming later
+            await pushData({
+              title,
+              url: request.loadedUrl,
+              html,
+              sourceUrl: request.loadedUrl,
+            });
+
+            if (config.onVisitPage) {
+              await config.onVisitPage({ page, pushData });
+            }
+
+            // Extract links from the current page
+            // and add them to the crawling queue.
+            await enqueueLinks({
+              globs:
+                typeof config.match === "string" ? [config.match] : config.match,
+            });
+          },
+          maxRequestsPerCrawl: config.maxPagesToCrawl,
+          // Other options remain the same...
+          preNavigationHooks: [
+            async ({ page, log }) => {
+              const RESOURCE_EXCLUSTIONS = config.resourceExclusions ?? [];
+              if (RESOURCE_EXCLUSTIONS.length === 0) {
+                return;
+              }
+              await page.route(`**\/*.{${RESOURCE_EXCLUSTIONS.join()}}`, (route) =>
+                route.abort("aborted"),
+              );
+              log.info(
+                `Aborting requests for as this is a resource excluded route`,
+              );
+            },
+          ],
+        });
+
         const SITEMAP_SUFFIX = "sitemap.xml";
         const isUrlASitemap = url.endsWith(SITEMAP_SUFFIX);
 
@@ -159,6 +170,93 @@ export async function crawl(config: Config) {
         }
       }
     } else {
+      // Local page counter for this specific crawl
+      let localPageCounter = 0;
+      
+      // Create a new crawler for a single URL configuration
+      const crawler = new PlaywrightCrawler({
+        // Use the requestHandler to process each of the crawled pages.
+        async requestHandler({ request, page, enqueueLinks, log, pushData }) {
+          if (config.cookie) {
+            // Handle the cookie based on whether it's an array or a single object
+            if (Array.isArray(config.cookie)) {
+              // If it's an array, add all cookies
+              const cookies = config.cookie.map((cookie) => ({
+                name: cookie.name,
+                value: cookie.value,
+                url: request.loadedUrl,
+              }));
+              await page.context().addCookies(cookies);
+            } else {
+              // If it's a single object
+              const cookie = {
+                name: config.cookie.name,
+                value: config.cookie.value,
+                url: request.loadedUrl,
+              };
+              await page.context().addCookies([cookie]);
+            }
+          }
+
+          const title = await page.title();
+          localPageCounter++;
+          log.info(
+            `Crawling: Page ${localPageCounter} / ${config.maxPagesToCrawl} - URL: ${request.loadedUrl}...`,
+          );
+
+          // Use custom handling for XPath selector
+          if (config.selector) {
+            if (config.selector.startsWith("/")) {
+              await waitForXPath(
+                page,
+                config.selector,
+                config.waitForSelectorTimeout ?? 1000,
+              );
+            } else {
+              await page.waitForSelector(config.selector, {
+                timeout: config.waitForSelectorTimeout ?? 1000,
+              });
+            }
+          }
+
+          const html = await getPageHtml(page, config.selector);
+
+          // Save results as JSON to ./storage/datasets/default
+          await pushData({
+            title,
+            url: request.loadedUrl,
+            html,
+            sourceUrl: request.loadedUrl,
+          });
+
+          if (config.onVisitPage) {
+            await config.onVisitPage({ page, pushData });
+          }
+
+          // Extract links from the current page
+          // and add them to the crawling queue.
+          await enqueueLinks({
+            globs:
+              typeof config.match === "string" ? [config.match] : config.match,
+          });
+        },
+        maxRequestsPerCrawl: config.maxPagesToCrawl,
+        preNavigationHooks: [
+          async ({ page, log }) => {
+            const RESOURCE_EXCLUSTIONS = config.resourceExclusions ?? [];
+            if (RESOURCE_EXCLUSTIONS.length === 0) {
+              return;
+            }
+            await page.route(`**\/*.{${RESOURCE_EXCLUSTIONS.join()}}`, (route) =>
+              route.abort("aborted"),
+            );
+            log.info(
+              `Aborting requests for as this is a resource excluded route`,
+            );
+          },
+        ],
+      });
+      
       // Original behavior for single URL
       const SITEMAP_SUFFIX = "sitemap.xml";
       const isUrlASitemap = config.url.endsWith(SITEMAP_SUFFIX);
@@ -174,8 +272,23 @@ export async function crawl(config: Config) {
   }
 }
 
-export async function write(config: Config) {
-  let nextFileNameString: PathLike = "";
+// The remaining code stays the same...
+export async function write(config: Config | Config[]) {
+  if (Array.isArray(config)) {
+    const results: PathLike[] = [];
+    for (const singleConfig of config) {
+      const result = await writeSingle(singleConfig);
+      results.push(result);
+    }
+    return results;
+  } else {
+    return await writeSingle(config);
+  }
+}
+
+// Extract the single config writing functionality
+async function writeSingle(config: Config): Promise<PathLike> {
+  // Code remains the same...
   const jsonFiles = await glob("storage/datasets/default/*.json", {
     absolute: true,
   });
@@ -201,25 +314,31 @@ export async function write(config: Config) {
         const pathname = urlObj.pathname.replace(/\//g, "_").replace(/^_/, "");
         const cleanUrl = `${hostname}${pathname}`;
 
-        if (!filesByUrl.has(cleanUrl)) {
-          filesByUrl.set(cleanUrl, []);
+        // Use config's outputFileName instead of cleanUrl for the map key
+        // This ensures each config gets its own output file
+        const configKey = config.outputFileName.replace(/\.json$/, "");
+        
+        if (!filesByUrl.has(configKey)) {
+          filesByUrl.set(configKey, []);
         }
 
-        filesByUrl.get(cleanUrl)!.push(file);
+        filesByUrl.get(configKey)!.push(file);
       } else {
-        // If no URL is found, use the default output filename
-        if (!filesByUrl.has("default")) {
-          filesByUrl.set("default", []);
+        // If no URL is found, use the config's outputFileName
+        const configKey = config.outputFileName.replace(/\.json$/, "");
+        if (!filesByUrl.has(configKey)) {
+          filesByUrl.set(configKey, []);
         }
-        filesByUrl.get("default")!.push(file);
+        filesByUrl.get(configKey)!.push(file);
       }
     } catch (error) {
       console.error(`Error processing file ${file}:`, error);
-      // If there's an error, add to default group
-      if (!filesByUrl.has("default")) {
-        filesByUrl.set("default", []);
+      // If there's an error, use the config's outputFileName
+      const configKey = config.outputFileName.replace(/\.json$/, "");
+      if (!filesByUrl.has(configKey)) {
+        filesByUrl.set(configKey, []);
       }
-      filesByUrl.get("default")!.push(file);
+      filesByUrl.get(configKey)!.push(file);
     }
   }
 
@@ -301,11 +420,11 @@ export async function write(config: Config) {
   return config.outputFileName;
 }
 
-// Create a class for the server.ts to use
+// Update the class for handling both single and array configs
 class GPTCrawlerCore {
-  private config: Config;
+  private config: Config | Config[];
 
-  constructor(config: Config) {
+  constructor(config: Config | Config[]) {
     this.config = config;
   }
 
@@ -313,10 +432,9 @@ class GPTCrawlerCore {
     return await crawl(this.config);
   }
 
-  async write(): Promise<PathLike> {
+  async write(): Promise<PathLike | PathLike[]> {
     return await write(this.config);
   }
 }
 
-// Add default export
 export default GPTCrawlerCore;
