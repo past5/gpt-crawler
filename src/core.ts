@@ -73,35 +73,35 @@ export async function crawl(config: Config) {
           `Crawling: Page ${pageCounter} / ${config.maxPagesToCrawl} - URL: ${request.loadedUrl}...`,
         );
 
-          // Use custom handling for XPath selector
-          if (config.selector) {
-            if (config.selector.startsWith("/")) {
-              await waitForXPath(
-                page,
-                config.selector,
-                config.waitForSelectorTimeout ?? 1000,
-              );
-            } else {
-              await page.waitForSelector(config.selector, {
-                timeout: config.waitForSelectorTimeout ?? 1000,
-              });
-            }
+        // Use custom handling for XPath selector
+        if (config.selector) {
+          if (config.selector.startsWith("/")) {
+            await waitForXPath(
+              page,
+              config.selector,
+              config.waitForSelectorTimeout ?? 1000,
+            );
+          } else {
+            await page.waitForSelector(config.selector, {
+              timeout: config.waitForSelectorTimeout ?? 1000,
+            });
           }
+        }
 
-          const html = await getPageHtml(page, config.selector);
+        const html = await getPageHtml(page, config.selector);
 
         // Save results as JSON to ./storage/datasets/default
         // Include the source URL in the data to help with file naming later
-        await pushData({ 
-          title, 
-          url: request.loadedUrl, 
-          html, 
-          sourceUrl: request.loadedUrl 
+        await pushData({
+          title,
+          url: request.loadedUrl,
+          html,
+          sourceUrl: request.loadedUrl,
         });
 
-          if (config.onVisitPage) {
-            await config.onVisitPage({ page, pushData });
-          }
+        if (config.onVisitPage) {
+          await config.onVisitPage({ page, pushData });
+        }
 
         // Extract links from the current page
         // and add them to the crawling queue.
@@ -169,48 +169,48 @@ export async function write(config: Config) {
   });
 
   console.log(`Found ${jsonFiles.length} files to combine...`);
-  
+
   // Group files by the source URL to create separate output files
   const filesByUrl = new Map<string, string[]>();
-  
+
   // First, categorize the files by their source URL
   for (const file of jsonFiles) {
     try {
       const fileContent = await readFile(file, "utf-8");
       const data = JSON.parse(fileContent);
-      
+
       // Use either the sourceUrl property or fallback to the url property
       const sourceUrl = data.sourceUrl || data.url;
-      
+
       if (sourceUrl) {
         // Create a clean filename from the URL
         const urlObj = new URL(sourceUrl);
         const hostname = urlObj.hostname;
-        const pathname = urlObj.pathname.replace(/\//g, '_').replace(/^_/, '');
+        const pathname = urlObj.pathname.replace(/\//g, "_").replace(/^_/, "");
         const cleanUrl = `${hostname}${pathname}`;
-        
+
         if (!filesByUrl.has(cleanUrl)) {
           filesByUrl.set(cleanUrl, []);
         }
-        
+
         filesByUrl.get(cleanUrl)!.push(file);
       } else {
         // If no URL is found, use the default output filename
-        if (!filesByUrl.has('default')) {
-          filesByUrl.set('default', []);
+        if (!filesByUrl.has("default")) {
+          filesByUrl.set("default", []);
         }
-        filesByUrl.get('default')!.push(file);
+        filesByUrl.get("default")!.push(file);
       }
     } catch (error) {
       console.error(`Error processing file ${file}:`, error);
       // If there's an error, add to default group
-      if (!filesByUrl.has('default')) {
-        filesByUrl.set('default', []);
+      if (!filesByUrl.has("default")) {
+        filesByUrl.set("default", []);
       }
-      filesByUrl.get('default')!.push(file);
+      filesByUrl.get("default")!.push(file);
     }
   }
-  
+
   // Process each URL group
   for (const [urlKey, files] of filesByUrl.entries()) {
     // Create a custom config for this URL group with a unique output filename
@@ -218,9 +218,9 @@ export async function write(config: Config) {
       ...config,
       outputFileName: `${urlKey}.json`,
     };
-    
+
     console.log(`Processing ${files.length} files for ${urlKey}...`);
-    
+
     let currentResults: Record<string, any>[] = [];
     let currentSize: number = 0;
     let fileCounter: number = 1;
@@ -279,8 +279,9 @@ export async function write(config: Config) {
       await addContentOrSplit(data);
     }
 
-  // Check if any remaining data needs to be written to a file.
-  if (currentResults.length > 0) {
-    await writeBatchToFile();
+    // Check if any remaining data needs to be written to a file.
+    if (currentResults.length > 0) {
+      await writeBatchToFile();
+    }
   }
 }
