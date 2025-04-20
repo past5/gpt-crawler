@@ -59,12 +59,24 @@ export async function crawl(config: Config) {
       async requestHandler({ request, page, enqueueLinks, log, pushData }) {
         // Same requestHandler code...
         if (config.cookie) {
-          const cookie = {
-            name: config.cookie.name,
-            value: config.cookie.value,
-            url: request.loadedUrl,
-          };
-          await page.context().addCookies([cookie]);
+          // Handle the cookie based on whether it's an array or a single object
+          if (Array.isArray(config.cookie)) {
+            // If it's an array, add all cookies
+            const cookies = config.cookie.map(cookie => ({
+              name: cookie.name,
+              value: cookie.value,
+              url: request.loadedUrl,
+            }));
+            await page.context().addCookies(cookies);
+          } else {
+            // If it's a single object
+            const cookie = {
+              name: config.cookie.name,
+              value: config.cookie.value,
+              url: request.loadedUrl,
+            };
+            await page.context().addCookies([cookie]);
+          }
         }
 
         const title = await page.title();
@@ -284,4 +296,27 @@ export async function write(config: Config) {
       await writeBatchToFile();
     }
   }
+  
+  // Return the output filename for the crawler class
+  return config.outputFileName;
 }
+
+// Create a class for the server.ts to use
+class GPTCrawlerCore {
+  private config: Config;
+
+  constructor(config: Config) {
+    this.config = config;
+  }
+
+  async crawl() {
+    return await crawl(this.config);
+  }
+
+  async write(): Promise<PathLike> {
+    return await write(this.config);
+  }
+}
+
+// Add default export
+export default GPTCrawlerCore;
