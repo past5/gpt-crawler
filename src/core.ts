@@ -63,7 +63,7 @@ function generateFilenameFromUrl(baseFilename: string, url: string): string {
       .replace(/\//g, "_")
       .replace(/^_/, "")
       .replace(/[^\w\-_.]/g, "_");
-    
+
     return `${baseFilename.replace(/\.json$/, "")}_${hostname}${pathname}.json`;
   } catch (error) {
     // Fallback if URL parsing fails
@@ -73,13 +73,16 @@ function generateFilenameFromUrl(baseFilename: string, url: string): string {
 }
 
 // Create a function to write page data to file
-async function writePageToFile(config: Config, data: Record<string, any>): Promise<string> {
+async function writePageToFile(
+  config: Config,
+  data: Record<string, any>,
+): Promise<string> {
   const sourceUrl = data.sourceUrl || data.url;
   const filename = generateFilenameFromUrl(config.outputFileName, sourceUrl);
-  
+
   await writeFile(filename, JSON.stringify(data, null, 2));
   console.log(`Wrote file: ${filename}`);
-  
+
   return filename;
 }
 
@@ -103,7 +106,7 @@ export async function crawl(config: Config | Config[]): Promise<string[]> {
     const files = await crawlSingle(config, rq);
     outputFiles.push(...files);
   }
-  
+
   return outputFiles;
 }
 
@@ -197,7 +200,10 @@ async function crawlSingle(
           await enqueueLinks({
             globs:
               typeof config.match === "string" ? [config.match] : config.match,
+            exclude:
+              config.exclude ? (typeof config.exclude === "string" ? [config.exclude] : config.exclude) : undefined,
           });
+          
         },
         maxRequestsPerCrawl: config.maxPagesToCrawl,
         preNavigationHooks: [
@@ -287,11 +293,11 @@ async function crawlSingle(
             html,
             sourceUrl: request.loadedUrl,
           };
-          
+
           // Write the data to a file immediately
           const filename = await writePageToFile(config, pageData);
           outputFiles.push(filename);
-          
+
           // Also push to dataset for compatibility with existing code
           await pushData(pageData);
 
@@ -304,6 +310,8 @@ async function crawlSingle(
           await enqueueLinks({
             globs:
               typeof config.match === "string" ? [config.match] : config.match,
+            exclude:
+              config.exclude ? (typeof config.exclude === "string" ? [config.exclude] : config.exclude) : undefined,
           });
         },
         maxRequestsPerCrawl: config.maxPagesToCrawl,
@@ -337,7 +345,7 @@ async function crawlSingle(
       }
     }
   }
-  
+
   return outputFiles;
 }
 
