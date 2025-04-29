@@ -65,19 +65,23 @@ function generateFilenameFromUrl(baseFilename: string, url: string): string {
       .replace(/\//g, "_")
       .replace(/^_/, "")
       .replace(/[^\w\-_.]/g, "_");
-    
+
     // Extract directory path and base name
     const dirPath = dirname(baseFilename);
-    const baseName = baseFilename.replace(/^.*[\\\/]/, '').replace(/\.json$/, "");
-    
+    const baseName = baseFilename
+      .replace(/^.*[\\\/]/, "")
+      .replace(/\.json$/, "");
+
     // Join the directory path with the generated filename
     return join(dirPath, `${baseName}_${hostname}${pathname}.json`);
   } catch (error) {
     // Fallback if URL parsing fails
     const timestamp = new Date().getTime();
     const dirPath = dirname(baseFilename);
-    const baseName = baseFilename.replace(/^.*[\\\/]/, '').replace(/\.json$/, "");
-    
+    const baseName = baseFilename
+      .replace(/^.*[\\\/]/, "")
+      .replace(/\.json$/, "");
+
     return join(dirPath, `${baseName}_${timestamp}.json`);
   }
 }
@@ -89,15 +93,15 @@ async function writePageToFile(
 ): Promise<string> {
   const sourceUrl = data.sourceUrl || data.url;
   const filename = generateFilenameFromUrl(config.outputFileName, sourceUrl);
-  
+
   // Create the directory if it doesn't exist
   const dir = dirname(filename);
-  if (dir !== '.') {
+  if (dir !== ".") {
     try {
       await mkdir(dir, { recursive: true });
     } catch (err: any) {
       // Ignore error if directory already exists
-      if (err.code !== 'EEXIST') throw err;
+      if (err.code !== "EEXIST") throw err;
     }
   }
 
