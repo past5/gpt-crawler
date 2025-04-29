@@ -1,14 +1,16 @@
 // Modified core.ts that removes the write function and integrates file writing into the crawl
 
 // For more information, see https://crawlee.dev/
+// Modified imports section to include path module and mkdir function
 import {
   Configuration,
   PlaywrightCrawler,
   downloadListOfUrls,
   RequestQueue,
 } from "crawlee";
-import { readFile, writeFile } from "fs/promises";
+import { readFile, writeFile, mkdir } from "fs/promises";
 import { glob } from "glob";
+import { dirname, join } from "path";
 import { Config, configSchema } from "./config.js";
 import { Page } from "playwright";
 import { isWithinTokenLimit } from "gpt-tokenizer";
@@ -63,12 +65,20 @@ function generateFilenameFromUrl(baseFilename: string, url: string): string {
       .replace(/\//g, "_")
       .replace(/^_/, "")
       .replace(/[^\w\-_.]/g, "_");
-
-    return `${baseFilename.replace(/\.json$/, "")}_${hostname}${pathname}.json`;
+    
+    // Extract directory path and base name
+    const dirPath = dirname(baseFilename);
+    const baseName = baseFilename.replace(/^.*[\\\/]/, '').replace(/\.json$/, "");
+    
+    // Join the directory path with the generated filename
+    return join(dirPath, `${baseName}_${hostname}${pathname}.json`);
   } catch (error) {
     // Fallback if URL parsing fails
     const timestamp = new Date().getTime();
-    return `${baseFilename.replace(/\.json$/, "")}_${timestamp}.json`;
+    const dirPath = dirname(baseFilename);
+    const baseName = baseFilename.replace(/^.*[\\\/]/, '').replace(/\.json$/, "");
+    
+    return join(dirPath, `${baseName}_${timestamp}.json`);
   }
 }
 
@@ -79,6 +89,17 @@ async function writePageToFile(
 ): Promise<string> {
   const sourceUrl = data.sourceUrl || data.url;
   const filename = generateFilenameFromUrl(config.outputFileName, sourceUrl);
+  
+  // Create the directory if it doesn't exist
+  const dir = dirname(filename);
+  if (dir !== '.') {
+    try {
+      await mkdir(dir, { recursive: true });
+    } catch (err: any) {
+      // Ignore error if directory already exists
+      if (err.code !== 'EEXIST') throw err;
+    }
+  }
 
   await writeFile(filename, JSON.stringify(data, null, 2));
   console.log(`Wrote file: ${filename}`);
@@ -200,10 +221,12 @@ async function crawlSingle(
           await enqueueLinks({
             globs:
               typeof config.match === "string" ? [config.match] : config.match,
-            exclude:
-              config.exclude ? (typeof config.exclude === "string" ? [config.exclude] : config.exclude) : undefined,
+            exclude: config.exclude
+              ? typeof config.exclude === "string"
+                ? [config.exclude]
+                : config.exclude
+              : undefined,
           });
-          
         },
         maxRequestsPerCrawl: config.maxPagesToCrawl,
         preNavigationHooks: [
@@ -310,8 +333,11 @@ async function crawlSingle(
           await enqueueLinks({
             globs:
               typeof config.match === "string" ? [config.match] : config.match,
-            exclude:
-              config.exclude ? (typeof config.exclude === "string" ? [config.exclude] : config.exclude) : undefined,
+            exclude: config.exclude
+              ? typeof config.exclude === "string"
+                ? [config.exclude]
+                : config.exclude
+              : undefined,
           });
         },
         maxRequestsPerCrawl: config.maxPagesToCrawl,
